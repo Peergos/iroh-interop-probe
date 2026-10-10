@@ -33,6 +33,7 @@ async fn main() -> anyhow::Result<()> {
     }
     let conn = endpoint.connect(target, ALPN).await?;
     println!("connected to {}", conn.remote_id());
+    print_path_events(&conn, "client");
     for i in 0..count {
         let (mut send, mut recv) = conn.open_bi().await?;
         let msg = format!("hello from rust iroh #{i}");
@@ -42,7 +43,28 @@ async fn main() -> anyhow::Result<()> {
         anyhow::ensure!(resp == msg.as_bytes(), "echo mismatch: {:?}", String::from_utf8_lossy(&resp));
         println!("echo ok: {msg}");
     }
+    if let Ok(ms) = std::env::var("IROH_CLIENT_LINGER_MS") {
+        // Keep the connection open so iroh can open more paths, then echo once more.
+        tokio::time::sleep(std::time::Duration::from_millis(ms.parse()?)).await;
+        let (mut send, mut recv) = conn.open_bi().await?;
+        send.write_all(b"after linger").await?;
+        send.finish()?;
+        let resp = recv.read_to_end(1 << 16).await?;
+        anyhow::ensure!(resp == b"after linger", "echo mismatch after linger");
+        println!("echo ok: after linger");
+    }
     conn.close(0u32.into(), b"bye");
     endpoint.close().await;
     Ok(())
+}
+
+/// Prints the connection's path events, for the interop tests to follow.
+pub fn print_path_events(conn: &iroh::endpoint::Connection, who: &'static str) {
+    use futures_lite::StreamExt;
+    let mut events = conn.path_events();
+    tokio::spawn(async move {
+        while let Some(event) = events.next().await {
+            println!("{who} path event: {event:?}");
+        }
+    });
 }

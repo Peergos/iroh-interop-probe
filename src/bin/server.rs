@@ -14,6 +14,7 @@ struct Echo;
 impl ProtocolHandler for Echo {
     async fn accept(&self, connection: Connection) -> Result<(), AcceptError> {
         println!("accepted connection from {}", connection.remote_id());
+        print_path_events(&connection, "server");
         loop {
             let Ok((mut send, mut recv)) = connection.accept_bi().await else { break };
             let n = tokio::io::copy(&mut recv, &mut send).await?;
@@ -55,4 +56,15 @@ async fn main() -> anyhow::Result<()> {
     tokio::signal::ctrl_c().await?;
     router.shutdown().await?;
     Ok(())
+}
+
+/// Prints the connection's path events, for the interop tests to follow.
+pub fn print_path_events(conn: &iroh::endpoint::Connection, who: &'static str) {
+    use futures_lite::StreamExt;
+    let mut events = conn.path_events();
+    tokio::spawn(async move {
+        while let Some(event) = events.next().await {
+            println!("{who} path event: {event:?}");
+        }
+    });
 }
