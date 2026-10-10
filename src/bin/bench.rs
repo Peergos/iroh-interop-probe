@@ -112,6 +112,19 @@ async fn client(args: &[String]) -> anyhow::Result<()> {
         .await?;
     let conn = endpoint.connect(EndpointAddr::new(id).with_ip_addr(addr), ALPN).await?;
     let per_stream = size / streams;
+    let sampler = std::env::var("BENCH_STATS").is_ok().then(|| {
+        let conn = conn.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+                let line = conn.paths().iter().next().map(|path| path.stats()).map(|stats| format!(
+                    "rtt {}us cwnd {} lost {} congestion events {}", stats.rtt.as_micros(), stats.cwnd, stats.lost_packets, stats.congestion_events));
+                if let Some(line) = line {
+                    eprintln!("{line}");
+                }
+            }
+        })
+    });
     let start = Instant::now();
     let mut tasks = Vec::new();
     for _ in 0..streams {
@@ -147,6 +160,12 @@ async fn client(args: &[String]) -> anyhow::Result<()> {
     }
     let secs = start.elapsed().as_secs_f64();
     println!("{} {} bytes in {:.3}s = {:.1} MiB/s", args[2], total, secs, total as f64 / secs / (1 << 20) as f64);
+    if std::env::var("BENCH_STATS").is_ok() {
+        println!("{:#?}", conn.stats());
+    }
+    if let Some(sampler) = sampler {
+        sampler.abort();
+    }
     conn.close(0u32.into(), b"bye");
     endpoint.close().await;
     Ok(())
