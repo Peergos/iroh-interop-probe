@@ -1,6 +1,7 @@
-//! A Rust iroh endpoint (relay and address lookup disabled) dialing a known direct address, then echoing over
-//! a few bidirectional streams. Usage: iroh_client <addr> <endpoint_id_hex> [count]
-use iroh::{Endpoint, EndpointAddr, PublicKey, RelayMode, endpoint::presets};
+//! A Rust iroh endpoint (address lookup disabled) dialing a known direct address and/or relay, then
+//! echoing over a few bidirectional streams.
+//! Usage: iroh_client <addr|-> <endpoint_id_hex> [count] [relay_url]
+use iroh::{Endpoint, EndpointAddr, PublicKey, RelayMap, RelayMode, RelayUrl, endpoint::presets};
 
 const ALPN: &[u8] = b"iroh-interop/echo/0";
 
@@ -8,17 +9,29 @@ const ALPN: &[u8] = b"iroh-interop/echo/0";
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt().with_env_filter(tracing_subscriber::EnvFilter::from_default_env()).init();
     let args: Vec<String> = std::env::args().collect();
-    let addr: std::net::SocketAddr = args[1].parse()?;
+    let addr: Option<std::net::SocketAddr> = if args[1] == "-" { None } else { Some(args[1].parse()?) };
     let id = PublicKey::from_bytes(&hex::decode(&args[2])?.try_into().unwrap())?;
     let count: usize = args.get(3).map(|c| c.parse()).transpose()?.unwrap_or(3);
 
+    let relay: Option<RelayUrl> = args.get(4).map(|u| u.parse()).transpose()?;
+    let relay_mode = match &relay {
+        Some(url) => RelayMode::Custom(RelayMap::from(url.clone())),
+        None => RelayMode::Disabled,
+    };
     let endpoint = Endpoint::builder(presets::Minimal)
-        .relay_mode(RelayMode::Disabled)
+        .relay_mode(relay_mode)
         .clear_address_lookup()
         .bind()
         .await?;
     println!("client id: {}", hex::encode(endpoint.id().as_bytes()));
-    let conn = endpoint.connect(EndpointAddr::new(id).with_ip_addr(addr), ALPN).await?;
+    let mut target = EndpointAddr::new(id);
+    if let Some(addr) = addr {
+        target = target.with_ip_addr(addr);
+    }
+    if let Some(url) = relay {
+        target = target.with_relay_url(url);
+    }
+    let conn = endpoint.connect(target, ALPN).await?;
     println!("connected to {}", conn.remote_id());
     for i in 0..count {
         let (mut send, mut recv) = conn.open_bi().await?;

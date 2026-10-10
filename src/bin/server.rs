@@ -1,7 +1,7 @@
-//! Reference iroh echo endpoint for interop testing: relay and address lookup disabled,
-//! bound to a fixed UDP address. Usage: server [bind_addr] [secret_key_hex]
+//! Reference iroh echo endpoint for interop testing: address lookup disabled, bound to a fixed UDP
+//! address, relay disabled unless given. Usage: server [bind_addr] [secret_key_hex] [relay_url]
 use iroh::{
-    Endpoint, RelayMode, SecretKey,
+    Endpoint, RelayMap, RelayMode, RelayUrl, SecretKey,
     endpoint::{Connection, presets},
     protocol::{AcceptError, ProtocolHandler, Router},
 };
@@ -33,15 +33,24 @@ async fn main() -> anyhow::Result<()> {
         Some(h) => SecretKey::from_bytes(&hex::decode(h)?.try_into().unwrap()),
         None => SecretKey::generate(),
     };
+    let relay: Option<RelayUrl> = args.get(3).map(|u| u.parse()).transpose()?;
+    let relay_mode = match &relay {
+        Some(url) => RelayMode::Custom(RelayMap::from(url.clone())),
+        None => RelayMode::Disabled,
+    };
     let endpoint = Endpoint::builder(presets::Minimal)
         .secret_key(secret)
-        .relay_mode(RelayMode::Disabled)
+        .relay_mode(relay_mode)
         .clear_address_lookup()
         .bind_addr(bind.as_str())?
         .bind()
         .await?;
     println!("endpoint id: {}", hex::encode(endpoint.id().as_bytes()));
     println!("bound: {:?}", endpoint.bound_sockets());
+    if relay.is_some() {
+        endpoint.online().await;
+        println!("relay: {:?}", endpoint.addr().relay_urls().next());
+    }
     let router = Router::builder(endpoint).accept(ALPN, Echo).spawn();
     tokio::signal::ctrl_c().await?;
     router.shutdown().await?;
