@@ -2204,6 +2204,7 @@ checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
 [[package]]
 name = "pkarr"
 version = "8.1.0"
+source = "git+https://github.com/pubky/pkarr?rev=d3e36f36f594933da49cbd353f71bbfe01a21629#d3e36f36f594933da49cbd353f71bbfe01a21629"
 dependencies = [
  "async-compat",
  "base32",
