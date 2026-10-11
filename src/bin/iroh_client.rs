@@ -18,11 +18,15 @@ async fn main() -> anyhow::Result<()> {
         Some(url) => RelayMode::Custom(RelayMap::from(url.clone())),
         None => RelayMode::Disabled,
     };
-    let endpoint = Endpoint::builder(presets::Minimal)
+    let mut builder = Endpoint::builder(presets::Minimal)
         .relay_mode(relay_mode)
-        .clear_address_lookup()
-        .bind()
-        .await?;
+        .clear_address_lookup();
+    // IROH_RELAY_CA: a PEM certificate to trust for the relay, e.g. a test relay's self-signed one.
+    if let Ok(ca) = std::env::var("IROH_RELAY_CA") {
+        use rustls::pki_types::{CertificateDer, pem::PemObject};
+        builder = builder.ca_tls_config(iroh::tls::CaTlsConfig::custom_roots([CertificateDer::from_pem_file(ca)?]));
+    }
+    let endpoint = builder.bind().await?;
     println!("client id: {}", hex::encode(endpoint.id().as_bytes()));
     let mut target = EndpointAddr::new(id);
     if let Some(addr) = addr {
@@ -30,6 +34,11 @@ async fn main() -> anyhow::Result<()> {
     }
     if let Some(url) = relay {
         target = target.with_relay_url(url);
+    }
+    // IROH_CLIENT_WAIT_ONLINE: dial only once on the relay and the public address is known, like a long-running node.
+    if std::env::var("IROH_CLIENT_WAIT_ONLINE").is_ok() {
+        endpoint.online().await;
+        println!("client addr: {:?}", endpoint.addr().ip_addrs().collect::<Vec<_>>());
     }
     let conn = endpoint.connect(target, ALPN).await?;
     println!("connected to {}", conn.remote_id());

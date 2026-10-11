@@ -1,5 +1,5 @@
 //! Reference iroh echo endpoint for interop testing: address lookup disabled, bound to a fixed UDP
-//! address, relay disabled unless given. Usage: server [bind_addr] [secret_key_hex] [relay_url]
+//! address, relay disabled unless given. Usage: server [bind_addr] [secret_key_hex|-] [relay_url]
 use iroh::{
     Endpoint, RelayMap, RelayMode, RelayUrl, SecretKey,
     endpoint::{Connection, presets},
@@ -30,7 +30,7 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt().with_env_filter(tracing_subscriber::EnvFilter::from_default_env()).init();
     let args: Vec<String> = std::env::args().collect();
     let bind = args.get(1).cloned().unwrap_or("127.0.0.1:4433".into());
-    let secret = match args.get(2) {
+    let secret = match args.get(2).filter(|h| h.as_str() != "-") {
         Some(h) => SecretKey::from_bytes(&hex::decode(h)?.try_into().unwrap()),
         None => SecretKey::generate(),
     };
@@ -39,13 +39,17 @@ async fn main() -> anyhow::Result<()> {
         Some(url) => RelayMode::Custom(RelayMap::from(url.clone())),
         None => RelayMode::Disabled,
     };
-    let endpoint = Endpoint::builder(presets::Minimal)
+    let mut builder = Endpoint::builder(presets::Minimal)
         .secret_key(secret)
         .relay_mode(relay_mode)
         .clear_address_lookup()
-        .bind_addr(bind.as_str())?
-        .bind()
-        .await?;
+        .bind_addr(bind.as_str())?;
+    // IROH_RELAY_CA: a PEM certificate to trust for the relay, e.g. a test relay's self-signed one.
+    if let Ok(ca) = std::env::var("IROH_RELAY_CA") {
+        use rustls::pki_types::{CertificateDer, pem::PemObject};
+        builder = builder.ca_tls_config(iroh::tls::CaTlsConfig::custom_roots([CertificateDer::from_pem_file(ca)?]));
+    }
+    let endpoint = builder.bind().await?;
     println!("endpoint id: {}", hex::encode(endpoint.id().as_bytes()));
     println!("bound: {:?}", endpoint.bound_sockets());
     if relay.is_some() {
