@@ -17,3 +17,4 @@ hex = "0.4"
 blake3 = "1"
 pkarr = { git = "https://github.com/pubky/pkarr", rev = "d3e36f36f594933da49cbd353f71bbfe01a21629", default-features = false, features = ["dht"] }
 mainline = { version = "8", default-features = false }
+iroh-mdns-address-lookup = "=0.6.0"

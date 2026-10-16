@@ -11,6 +11,7 @@ so clone this repo as `interop-probe` next to jiroh.
 | `plain_client` | plain noq client (no multipath, NAT traversal or QAD) speaking iroh's raw public key TLS |
 | `bench` | throughput server/client (`iroh-bench/0`), wire compatible with jiroh's `Bench`; `BENCH_STATS` prints connection stats and RTT/cwnd samples |
 | `plain_bench` | the bench client over plain noq, optionally with multipath (`PLAIN_MULTIPATH`) |
+| `mdns_peer` | iroh endpoint whose only address lookup is mDNS (`iroh-mdns-address-lookup`): `serve` echoes and prints what it discovers, `dial <id>` dials by id alone |
 | `pkarr_publish`, `pkarr_resolve`, `dht_testnet` | pkarr on a local mainline testnet |
 | `blake3_vectors` | BLAKE3 test vectors for jiroh's implementation |
 
